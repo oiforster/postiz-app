@@ -1,3 +1,7 @@
+> **This is a community fork** with production-tested bug fixes not yet merged upstream. See [FIXES.md](./FIXES.md) for details.
+
+---
+
 <p align="center">
   <a href="https://postiz.com/" target="_blank">
   <picture>
