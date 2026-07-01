@@ -69,7 +69,7 @@ export const ChangeLanguageComponent = () => {
   const t = useT();
 
   const handleLanguageChange = (language: string) => {
-    setCookie(language);
+    setCookie(language, { days: 3650 });
     i18next.changeLanguage(language);
     modals.closeCurrent();
     const rtlLanguages = ['he', 'ar'];
