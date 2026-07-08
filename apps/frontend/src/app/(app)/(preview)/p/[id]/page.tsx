@@ -158,18 +158,39 @@ export default async function Auth(
                         }}
                       />
                       <div className="flex w-full gap-[10px]">
-                        {JSON.parse(p?.image || '[]').map((p: any) => (
-                          <div
-                            key={p.name}
-                            className="flex-1 rounded-[10px] max-h-[500px] overflow-hidden"
-                          >
-                            <VideoOrImage
-                              isContain={true}
-                              src={p.path}
-                              autoplay={true}
-                            />
-                          </div>
-                        ))}
+                        {(() => {
+                          const mediaList = JSON.parse(p?.image || '[]');
+                          let isStory = false;
+                          try {
+                            isStory =
+                              JSON.parse(p?.settings || '{}')?.post_type ===
+                              'story';
+                          } catch {}
+                          // Mirror the backend Reels cover_url rule: only a
+                          // single-media, non-story Instagram Reel shows its
+                          // chosen cover instead of the raw video.
+                          const showReelCover =
+                            post[0]?.integration?.providerIdentifier ===
+                              'instagram' &&
+                            !isStory &&
+                            mediaList.length === 1;
+                          return mediaList.map((media: any) => (
+                            <div
+                              key={media.name}
+                              className="flex-1 rounded-[10px] max-h-[500px] overflow-hidden"
+                            >
+                              <VideoOrImage
+                                isContain={true}
+                                src={
+                                  showReelCover && media.thumbnail
+                                    ? media.thumbnail
+                                    : media.path
+                                }
+                                autoplay={true}
+                              />
+                            </div>
+                          ));
+                        })()}
                       </div>
                     </div>
                   </div>

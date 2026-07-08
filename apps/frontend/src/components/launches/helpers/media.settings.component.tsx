@@ -321,6 +321,7 @@ export const MediaComponentInner: FC<{
   const [thumbnailTimestamp, setThumbnailTimestamp] = useState<number | null>(
     props.media?.thumbnailTimestamp || null
   );
+  const uploadCoverRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setActivateExitButton(false);
@@ -362,6 +363,21 @@ export const MediaComponentInner: FC<{
     onClose();
   }, [altText, newThumbnail, thumbnail, thumbnailTimestamp]);
 
+  const onUploadCover = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      // reset so re-selecting the same file re-triggers onChange
+      e.target.value = '';
+      if (!file) {
+        return;
+      }
+      // Uploaded image becomes the cover (cover_url); drop the frame offset.
+      setNewThumbnail(URL.createObjectURL(file));
+      setThumbnailTimestamp(null);
+    },
+    []
+  );
+
   return (
     <div className="mt-[10px] flex flex-col gap-[20px]">
       <div className="flex flex-col space-y-2">
@@ -397,6 +413,13 @@ export const MediaComponentInner: FC<{
                 )}
 
                 {/* Action Buttons */}
+                <input
+                  ref={uploadCoverRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={onUploadCover}
+                />
                 <div className="flex space-x-2">
                   <button
                     disabled={loading}
@@ -406,6 +429,13 @@ export const MediaComponentInner: FC<{
                     {media.thumbnail || newThumbnail
                       ? 'Edit Thumbnail'
                       : 'Create Thumbnail'}
+                  </button>
+                  <button
+                    disabled={loading}
+                    onClick={() => uploadCoverRef.current?.click()}
+                    className="bg-third text-textColor px-6 py-2 rounded-lg hover:bg-opacity-80 transition-all flex-1 border border-tableBorder"
+                  >
+                    Upload image
                   </button>
                   {(thumbnail || newThumbnail) && (
                     <button
