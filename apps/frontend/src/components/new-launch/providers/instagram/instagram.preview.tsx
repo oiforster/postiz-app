@@ -1,4 +1,5 @@
 import { useIntegration } from '@gitroom/frontend/components/launches/helpers/use.integration';
+import { useSettings } from '@gitroom/frontend/components/launches/helpers/use.values';
 import { useLaunchStore } from '@gitroom/frontend/components/new-launch/store';
 import { useMediaDirectory } from '@gitroom/react/helpers/use.media.directory';
 import { stripHtmlValidation } from '@gitroom/helpers/utils/strip.html.validation';
@@ -13,6 +14,8 @@ export const InstagramPreview: FC<{
   const { value: topValue, integration } = useIntegration();
   const current = useLaunchStore((state) => state.current);
   const mediaDir = useMediaDirectory();
+  const { watch } = useSettings();
+  const postType = watch('post_type');
 
   const renderContent = topValue.map((p) => {
     const newContent = stripHtmlValidation(
@@ -47,6 +50,17 @@ export const InstagramPreview: FC<{
 
     return { text: finalValue, images: p.image };
   });
+
+  // Mirror the backend Reels cover_url rule (instagram.provider.ts): show the
+  // chosen cover only for a single-media, non-story Reel that has a thumbnail.
+  const firstImages = renderContent?.[0]?.images;
+  const reelCover =
+    postType !== 'story' &&
+    firstImages?.length === 1 &&
+    firstImages?.[0]?.thumbnail
+      ? firstImages[0].thumbnail
+      : '';
+
   return (
     <div className="py-[10px] flex flex-col px-[15px] w-full gap-[10px] bg-bgInstagram rounded-[12px]">
       <div className="flex gap-[10px] items-center">
@@ -71,7 +85,15 @@ export const InstagramPreview: FC<{
               href={mediaDir.set(image.path)}
               target="_blank"
             >
-              <VideoOrImage autoplay={true} src={mediaDir.set(image.path)} />
+              {reelCover ? (
+                <img
+                  src={mediaDir.set(reelCover)}
+                  alt="Reel cover"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <VideoOrImage autoplay={true} src={mediaDir.set(image.path)} />
+              )}
             </a>
           ))}
         />
