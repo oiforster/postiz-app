@@ -302,6 +302,23 @@ export class PostActivity {
   }
 
   @ActivityMethod()
+  async notifyTelegramError(message: string) {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const chatId = process.env.TELEGRAM_CHAT_ID;
+    if (!token || !chatId) return;
+
+    try {
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: message }),
+      });
+    } catch (e) {
+      // best-effort notification, never fail the workflow over it
+    }
+  }
+
+  @ActivityMethod()
   async internalPlugs(integration: Integration, settings: any) {
     return this._postService.checkInternalPlug(
       integration,

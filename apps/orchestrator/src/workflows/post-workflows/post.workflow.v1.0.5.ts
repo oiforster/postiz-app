@@ -28,6 +28,20 @@ const proxyTaskQueue = (taskQueue: string) => {
   });
 };
 
+// postSocial gets its own single-attempt proxy: transient failures (media
+// timeouts, etc.) are retried manually in the workflow loop below, on a much
+// longer ~2h backoff, with a Telegram notification per attempt — instead of
+// Temporal's silent 3-attempt/2min policy.
+const proxyTaskQueueSingleAttempt = (taskQueue: string) => {
+  return proxyActivities<PostActivity>({
+    startToCloseTimeout: '10 minute',
+    taskQueue,
+    retry: {
+      maximumAttempts: 1,
+    },
+  });
+};
+
 const {
   getPostsList,
   getPost,
@@ -36,6 +50,7 @@ const {
   updatePost,
   sendWebhooks,
   isCommentable,
+  notifyTelegramError,
 } = proxyActivities<PostActivity>({
   startToCloseTimeout: '10 minute',
   retry: {
@@ -48,6 +63,13 @@ const {
 const poke = defineSignal('poke');
 
 const iterate = Array.from({ length: 5 });
+
+// Backoff schedule (ms) for transient infra failures on the main post attempt.
+// 2+4+8+16+30+30+30 = 120min (~2h), matching the home server's no-UPS reality.
+const TRANSIENT_SCHEDULE_MS = [2, 4, 8, 16, 30, 30, 30].map((m) => m * 60000);
+const mainPostAttempts = Array.from({
+  length: TRANSIENT_SCHEDULE_MS.length + 5,
+});
 
 export async function postWorkflowV105({
   taskQueue,
@@ -62,7 +84,6 @@ export async function postWorkflowV105({
 }) {
   // Dynamic task queue, for concurrency
   const {
-    postSocial,
     postComment,
     getIntegrationById,
     refreshTokenWithCause,
@@ -71,6 +92,7 @@ export async function postWorkflowV105({
     processInternalPlug,
     processPlug,
   } = proxyTaskQueue(taskQueue);
+  const { postSocial } = proxyTaskQueueSingleAttempt(taskQueue);
 
   let poked = false;
   setHandler(poke, () => {
@@ -163,8 +185,10 @@ export async function postWorkflowV105({
   // iterate over the posts
   for (let i = 0; i < postsList.length; i++) {
     const before = postsResults.length;
+    let transientAttempt = 0;
     // this is a small trick to repeat an action in case of token refresh
-    for (const _ of iterate) {
+    // (or, for the main post, a transient infra failure — see below)
+    for (const _ of mainPostAttempts) {
       try {
         // first post the main post
         if (i === 0) {
@@ -236,6 +260,47 @@ export async function postWorkflowV105({
           continue;
         }
 
+        // Anything on the main post that isn't an explicit permanent failure
+        // (bad_body) is treated as retry-worthy: explicit 'transient' Meta
+        // error codes, AND any uncategorized/raw error (e.g. a network-level
+        // fetch() exception that never reached handleErrors). On a home
+        // server with no UPS, an unrecognized error during a reboot/recovery
+        // window is far more likely to be transient infra noise than a
+        // genuine permanent content problem — so unknown defaults to retry,
+        // not to giving up.
+        const isPermanentFailure =
+          err instanceof ActivityFailure &&
+          err.cause instanceof ApplicationFailure &&
+          err.cause.type === 'bad_body';
+
+        if (i === 0 && !isPermanentFailure) {
+          transientAttempt++;
+          const label = `${post.integration?.name} (${post.integration?.providerIdentifier})`;
+          const errCause =
+            err instanceof ActivityFailure && err.cause instanceof ApplicationFailure
+              ? err.cause
+              : undefined;
+          const errMessage =
+            errCause?.message || (err instanceof Error ? err.message : 'Unknown error');
+
+          if (transientAttempt <= TRANSIENT_SCHEDULE_MS.length) {
+            const waitMs = TRANSIENT_SCHEDULE_MS[transientAttempt - 1];
+            await notifyTelegramError(
+              `⚠️ Falha ao publicar em ${label}: ${errMessage}. Tentativa ${transientAttempt}/${TRANSIENT_SCHEDULE_MS.length}, nova tentativa em ${Math.round(
+                waitMs / 60000
+              )}min.`
+            );
+            await sleep(waitMs);
+            continue;
+          }
+
+          await changeState(postsList[0].id, 'ERROR', err, postsList);
+          await notifyTelegramError(
+            `❌ Desisti de publicar em ${label} depois de ${TRANSIENT_SCHEDULE_MS.length} tentativas (~2h): ${errMessage}. Post ${post.id} ficou marcado como ERRO, precisa reagendar manualmente.`
+          );
+          return false;
+        }
+
         // for other errors, change state and inform the user if needed
         await changeState(postsList[0].id, 'ERROR', err, postsList);
 
@@ -263,7 +328,18 @@ export async function postWorkflowV105({
     }
 
     if (postsResults.length === before) {
-      // all retries exhausted without success
+      // All retries exhausted without success. This shouldn't normally be
+      // reached for i===0 (the transient/permanent branches above always
+      // changeState+return before falling out of the loop) — but it's a
+      // defense-in-depth net in case the shared attempt budget runs out from
+      // an unlucky interleaving (e.g. token-refresh retries, which aren't
+      // capped on their own, eating into it). Never fail silently.
+      if (i === 0) {
+        await changeState(postsList[0].id, 'ERROR', 'Retry budget exhausted', postsList);
+        await notifyTelegramError(
+          `❌ Esgotei as tentativas de publicar em ${post.integration?.name} (${post.integration?.providerIdentifier}) sem sucesso. Post ${post.id} ficou marcado como ERRO, precisa reagendar manualmente.`
+        );
+      }
       return false;
     }
   }

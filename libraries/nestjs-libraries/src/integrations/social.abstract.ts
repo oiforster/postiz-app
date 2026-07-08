@@ -33,6 +33,25 @@ export class BadBody extends ApplicationFailure {
   }
 }
 
+// Infra-flavored failures (media download/upload timeouts, transient fetch errors)
+// that are worth retrying over a long window instead of failing the post outright.
+// nonRetryable: false lets Temporal's own retry policy handle backoff for activities
+// still on a multi-attempt proxy (e.g. postComment, via proxyTaskQueue). postSocial
+// runs on proxyTaskQueueSingleAttempt (maximumAttempts: 1) instead — Temporal makes
+// only one attempt regardless of this flag, and the ~2h backoff for that path is
+// driven entirely by the manual retry loop in post.workflow.v1.0.5.ts.
+export class TransientError extends ApplicationFailure {
+  constructor(identifier: string, json: string, body: BodyInit, message = '') {
+    super(message, 'transient', false, [
+      {
+        identifier,
+        json,
+        body,
+      },
+    ]);
+  }
+}
+
 export class NotEnoughScopes {
   constructor(
     public message = 'Not enough scopes, when choosing a provider, please add all the scopes'
@@ -61,7 +80,7 @@ export abstract class SocialAbstract {
     body: string,
     status: number
   ):
-    | { type: 'refresh-token' | 'bad-body' | 'retry'; value: string }
+    | { type: 'refresh-token' | 'bad-body' | 'retry' | 'transient'; value: string }
     | undefined {
     return undefined;
   }
@@ -204,6 +223,15 @@ export abstract class SocialAbstract {
       handleError?.type === 'refresh-token'
     ) {
       throw new RefreshToken(
+        identifier,
+        json,
+        options.body!,
+        handleError?.value
+      );
+    }
+
+    if (handleError?.type === 'transient') {
+      throw new TransientError(
         identifier,
         json,
         options.body!,

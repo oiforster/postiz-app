@@ -101,7 +101,7 @@ export class InstagramProvider
     status: number
   ):
     | {
-        type: 'refresh-token' | 'bad-body' | 'retry';
+        type: 'refresh-token' | 'bad-body' | 'retry' | 'transient';
         value: string;
       }
     | undefined {
@@ -154,10 +154,12 @@ export class InstagramProvider
       };
     }
 
-    // Media download/upload errors
+    // Media download/upload errors — the ones Meta itself labels "please try
+    // again" are transient (infra hiccups on our end fetching/serving the
+    // media); retried by Temporal with a long backoff instead of failing outright.
     if (body.indexOf('2207003') > -1) {
       return {
-        type: 'bad-body' as const,
+        type: 'transient' as const,
         value: 'Timeout downloading media, please try again',
       };
     }
@@ -171,21 +173,21 @@ export class InstagramProvider
 
     if (body.indexOf('2207032') > -1) {
       return {
-        type: 'bad-body' as const,
+        type: 'transient' as const,
         value: 'Failed to create media, please try again',
       };
     }
 
     if (body.indexOf('2207053') > -1) {
       return {
-        type: 'bad-body' as const,
+        type: 'transient' as const,
         value: 'Unknown upload error, please try again',
       };
     }
 
     if (body.indexOf('2207052') > -1) {
       return {
-        type: 'bad-body' as const,
+        type: 'transient' as const,
         value: 'Media fetch failed, please try again',
       };
     }
@@ -220,7 +222,7 @@ export class InstagramProvider
 
     if (body.indexOf('2207008') > -1) {
       return {
-        type: 'bad-body' as const,
+        type: 'transient' as const,
         value: 'Media builder expired, please try again',
       };
     }
