@@ -192,6 +192,13 @@ export class InstagramProvider
       };
     }
 
+    if (body.indexOf('2207077') > -1) {
+      return {
+        type: 'transient' as const,
+        value: 'Instagram Video download failed, please try again',
+      };
+    }
+
     if (body.indexOf('2207057') > -1) {
       return {
         type: 'bad-body' as const,
@@ -357,13 +364,6 @@ export class InstagramProvider
         type: 'retry' as const,
         value: 'Could not upload your media',
       }
-    }
-
-    if (body.indexOf('2207077') > -1) {
-      return {
-        type: 'bad-body' as const,
-        value: 'Instagram Video download failed',
-      };
     }
 
     if (body.indexOf('too little or too many attachments') > -1) {
