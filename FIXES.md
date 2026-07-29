@@ -53,6 +53,27 @@ The auth cookie was set with `Domain=.ts.net` — browsers silently reject this 
 
 Fix: return `undefined` when `tldts` detects a PSL domain → cookie is set without `Domain` attribute (host-only) → accepted by all browsers.
 
+### 6. Instagram collaborators on carousel posts
+**Issue:** [#1547](https://github.com/gitroomhq/postiz-app/issues/1547)  
+**File:** `libraries/nestjs-libraries/src/integrations/social/instagram.provider.ts`
+
+Publishing a carousel with collaborators always failed. Postiz sent the `collaborators`
+parameter on each child media creation call (`is_carousel_item=true`), where Meta rejects it
+with `param collaborators is not allowed for carousel child`. The parameter belongs on the
+parent container (`media_type=CAROUSEL`), which never received it.
+
+Fix: hoist the parameter out of the media loop, skip it on carousel children, and append it
+to the CAROUSEL container call. Also wraps the value in `encodeURIComponent()`, matching how
+every other JSON parameter in the same function is encoded.
+
+Verified against the live Graph API on an **Instagram Login** account
+(`graph.instagram.com`, i.e. a standalone connection without a linked Facebook Page):
+the child call returns `param collaborators is not allowed for carousel child`, while the
+CAROUSEL container accepts the parameter and proceeds to resolve the usernames. A real
+two-image carousel with a collaborator published successfully end to end.
+
+---
+
 ---
 
 ## How to use this fork

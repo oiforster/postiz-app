@@ -609,16 +609,27 @@ export class InstagramProvider
     console.log('in progress', id);
     const isStory = firstPost.settings.post_type === 'story';
     const isTrialReel = !!firstPost.settings.is_trial_reel;
+    const isCarouselPost = (firstPost?.media?.length || 0) > 1 && !isStory;
+    // Instagram only accepts `collaborators` on the parent carousel container
+    // (media_type=CAROUSEL), never on the children (is_carousel_item=true),
+    // which reject it with "param collaborators is not allowed for carousel
+    // child". For single-media posts it goes on the media call itself.
+    // See gitroomhq/postiz-app#1547.
+    const collaboratorsParam =
+      firstPost?.settings?.collaborators?.length && !isStory
+        ? `&collaborators=${encodeURIComponent(
+            JSON.stringify(
+              firstPost?.settings?.collaborators.map((p) => p.label)
+            )
+          )}`
+        : ``;
     const medias = await Promise.all(
       firstPost?.media?.map(async (m) => {
         const caption =
           firstPost.media?.length === 1
             ? `&caption=${encodeURIComponent(firstPost.message)}`
             : ``;
-        const isCarousel =
-          (firstPost?.media?.length || 0) > 1 && !isStory
-            ? `&is_carousel_item=true`
-            : ``;
+        const isCarousel = isCarouselPost ? `&is_carousel_item=true` : ``;
         const mediaType = hasExtension(m.path, 'mp4')
           ? firstPost?.media?.length === 1
             ? isStory
@@ -644,12 +655,8 @@ export class InstagramProvider
             )}`
           : ``;
 
-        const collaborators =
-          firstPost?.settings?.collaborators?.length && !isStory
-            ? `&collaborators=${JSON.stringify(
-                firstPost?.settings?.collaborators.map((p) => p.label)
-              )}`
-            : ``;
+        // Carousel children reject this param; it goes on the parent container.
+        const collaborators = isCarouselPost ? `` : collaboratorsParam;
 
         // audio_configuration is only supported for Reels (single video, not a story)
         // and only with Facebook Login (not Instagram Login / graph.instagram.com)
@@ -817,7 +824,7 @@ export class InstagramProvider
             firstPost?.message
           )}&media_type=CAROUSEL&children=${encodeURIComponent(
             medias.join(',')
-          )}&access_token=${accessToken}`,
+          )}${collaboratorsParam}&access_token=${accessToken}`,
           {
             method: 'POST',
           }
